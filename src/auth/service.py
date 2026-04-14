@@ -1,6 +1,6 @@
 from typing import Annotated
 from fastapi import HTTPException, status, Depends
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import settings
 from pwdlib import PasswordHash
@@ -11,7 +11,8 @@ from sqlalchemy import func, select
 
 from src.database.core import DbSession
 from ..entities import User
-from .model import RegisterUserRequest, Token, Credential
+from .model import Token
+from ..user.model import CreateUser
 
 password_hash = PasswordHash.recommended()
 oauth2_schemas = OAuth2PasswordBearer(tokenUrl="api/auth/login")
@@ -55,7 +56,7 @@ def verify_access_token(access_token: str):
         return payload.get("sub")
 
 
-async def create_user(user_data: RegisterUserRequest, db: AsyncSession):
+async def create_user(user_data: CreateUser, db: AsyncSession):
     result = await db.execute(
         select(User).where(User.username == user_data.username.lower())
     )
@@ -105,6 +106,7 @@ async def get_current_user(
         )
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
+    print(user, "----")
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -115,44 +117,3 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
-
-
-async def delete_user(
-    user_id: str,
-    current_user: User,
-    db: AsyncSession,
-):
-    if str(user_id) != str(current_user.id):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not allowed to delete this user",
-        )
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-    await db.delete(user)
-    await db.commit()
-    return None
-
-
-async def get_users(db: AsyncSession):
-    result = await db.execute(select(User))
-    users = result.scalars().all()
-    if not users:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Users not found"
-        )
-    return users
-
-
-async def get_user(user_id, db: AsyncSession):
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
-    return user
